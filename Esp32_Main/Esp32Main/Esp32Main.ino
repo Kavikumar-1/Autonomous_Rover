@@ -164,7 +164,11 @@ void setup() {
 
   unsigned long startWait = millis();
   String camIP = "";
-  while (millis() - startWait < 10000) {
+  
+  // Request IP from camera
+  Serial2.println("GET_IP");
+  
+  while (millis() - startWait < 5000) { // Reduced wait to 5s
     Blynk.run(); // Keep Blynk alive
     if (Serial2.available()) {
       String line = Serial2.readStringUntil('\n');
@@ -212,17 +216,11 @@ void loop() {
   autonomousLoop();
 }
 
-int ghostTriggerCounter = 0; // To prevent random beeps
-
 void autonomousLoop() {
   long distance = getDistance();
-
-  // Only trigger if we see the plant 3 times in a row (Filter)
+  
+  // Immediate Detection: No filters. Stops immediately on first reading < 15cm
   if (distance > 0 && distance < 15) {
-    ghostTriggerCounter++;
-    if (ghostTriggerCounter >= 3) {
-      ghostTriggerCounter = 0;
-
       // ALERT: Stop and Beep for 1s
       stopMotors();
       digitalWrite(BUZZER_PIN, HIGH);
@@ -232,22 +230,19 @@ void autonomousLoop() {
       lcd.clear();
       lcd.print("Plant Found!");
       lcd.setCursor(0, 1);
-      lcd.print("Press Capture Button to Scan");
+      lcd.print("Press V8 to Scan");
 
-      // We do NOT call runAnalysisSequence() here anymore.
-      // We stay stopped and wait for the user to press V8.
       isScanning = false;
 
-      // To prevent it from re-beeping immediately, we wait
-      // in a mini-loop until manualMode is changed or V8 is pressed
+      // Wait here indefinitely until the user presses V8 to scan,
+      // OR until the plant is moved away (distance > 15),
+      // OR until switched to manual mode.
       while (getDistance() < 15 && !manualMode) {
         Blynk.run();
         timer.run();
         delay(100);
       }
-    }
   } else {
-    ghostTriggerCounter = 0;
     moveForward();
     if (!isScanning) {
       lcd.clear();
@@ -275,6 +270,12 @@ void runAnalysisSequence() {
     if (Serial2.available()) {
       String camResponse = Serial2.readStringUntil('\n');
       camResponse.trim();
+      
+      if (camResponse.length() > 0) {
+        Serial.print("CAM SAYS: ");
+        Serial.println(camResponse);
+      }
+      
       if (camResponse == "UPLOAD_SUCCESS") {
         uploadSuccess = true;
         break;

@@ -110,12 +110,17 @@ void loop() {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
 
-    if (cmd == "CAPTURE") {
+    if (cmd == "GET_IP") {
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.print("IP:");
+        Serial.println(WiFi.localIP());
+      }
+    } else if (cmd == "CAPTURE") {
 
       Serial.println("CMD RECEIVED");
 
-      // FLASH ON
-      ledcWrite(FLASH_LED, 255);
+      // FLASH ON (Low brightness to prevent Brownout crashes)
+      ledcWrite(FLASH_LED, 20);
       delay(200);
 
       // CAPTURE IMAGE
