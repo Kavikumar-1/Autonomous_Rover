@@ -56,7 +56,7 @@ BLYNK_WRITE(V4) {
   if (manualMode) {
     lcd.print("Manual Mode");
     lcd.setCursor(0, 1);
-    lcd.print("Ready to Drive");
+    lcd.print("Ready to Race!");
   } else {
     lcd.print("Auto Mode");
     isScanning = false;
@@ -424,17 +424,61 @@ void handlePlantResponse(JsonDocument &doc) {
   String condition = doc["condition"];
   String disease = doc["disease_name"];
 
+  // Clean up the name: Remove "Disease_" and "Healthy_" to save space
+  String displayName = disease;
+  displayName.replace("Disease_", "");
+  displayName.replace("Healthy_", "");
+  displayName.replace("_", " "); // Make it look nicer
+
   lcd.clear();
   if (condition == "disease") {
+    // Show Category
+    lcd.setCursor(0, 0);
     lcd.print("D: ");
-    lcd.print(disease.substring(0, 13));
+    
+    // Scroll the name if it's longer than 13 characters
+    if (displayName.length() > 13) {
+      scrollLine(0, "D: " + displayName, 16, 2); // Loop 2 times
+    } else {
+      lcd.print(displayName);
+    }
+    
     lcd.setCursor(0, 1);
     lcd.print("Spraying Mist...");
-
     triggerMist(disease);
+  } else if (condition == "unknown") {
+    lcd.setCursor(0, 0);
+    lcd.print("Unknown Object");
+    lcd.setCursor(0, 1);
+    lcd.print("Not a Plant?");
+    blynkSafeDelay(4000);
   } else {
-    lcd.print("Healthy Plant!");
+    lcd.setCursor(0, 0);
+    lcd.print("H: ");
+    
+    if (displayName.length() > 13) {
+      scrollLine(0, "H: " + displayName, 16, 2); // Loop 2 times
+    } else {
+      lcd.print(displayName);
+    }
+    
+    lcd.setCursor(0, 1);
+    lcd.print("Plant Healthy!");
     blynkSafeDelay(3000);
+  }
+}
+
+// Helper to scroll a long line multiple times
+void scrollLine(int row, String text, int displayWidth, int loops) {
+  String spacedText = text + "    "; // Add spaces at end
+  for (int l = 0; l < loops; l++) {
+    for (int i = 0; i < spacedText.length() - displayWidth + 1; i++) {
+      lcd.setCursor(0, row);
+      lcd.print(spacedText.substring(i, i + displayWidth));
+      delay(250); // Slightly faster scroll
+      Blynk.run();
+    }
+    delay(500); // Short pause before restarting the loop
   }
 }
 

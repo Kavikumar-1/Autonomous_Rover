@@ -16,9 +16,13 @@ except Exception as e:
     print("Warning: plant_model.h5 not found! Running in Mock Mode.")
     model = None
 
-# These must match exactly the alphabetical folder names in the dataset directory
-# Disease_Chilli, Disease_Tomato, Healthy_Chilli, Healthy_Tomato
-class_names = ['Disease_Chilli', 'Disease_Tomato', 'Healthy_Chilli', 'Healthy_Tomato']
+# Automatically detect classes from the dataset folder
+dataset_path = 'dataset'
+if os.path.exists(dataset_path):
+    class_names = sorted([d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))])
+    print(f"Detected classes: {class_names}")
+else:
+    class_names = ['Disease_Chilli', 'Disease_Tomato', 'Healthy_Chilli', 'Healthy_Tomato']
 
 last_result = {"status": "idle", "condition": "unknown", "disease_name": "none"}
 
@@ -57,14 +61,24 @@ def upload():
         # Predict
         predictions = model.predict(img_array, verbose=0)
         score = tf.nn.softmax(predictions[0])
-        predicted_class = class_names[np.argmax(score)]
         confidence = 100 * np.max(score)
-        print(f"[AI] Predicted class : {predicted_class}")
-        print(f"[AI] Confidence      : {confidence:.2f}%")
+        
+        # 🛡️ CONFIDENCE THRESHOLD (60%)
+        # If the AI is less than 60% sure, it's probably not a plant it knows.
+        threshold = 60.0 
+        if confidence < threshold:
+            predicted_class = "Unknown"
+            print(f"[AI] Low confidence ({confidence:.2f}%). Classifying as Unknown.")
+        else:
+            predicted_class = class_names[np.argmax(score)]
+            print(f"[AI] Predicted class : {predicted_class}")
+            print(f"[AI] Confidence      : {confidence:.2f}%")
 
     # Logic to trigger mist maker
     if "Disease" in predicted_class:
         condition = "disease"
+    elif predicted_class == "Unknown":
+        condition = "unknown"
     else:
         condition = "healthy"
 
