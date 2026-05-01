@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# AI Data & Images (Ignore these to keep GitHub repo small)
+Rover_Project_BackEnd/captured_images/
+Rover_Project_BackEnd/dataset/
+Rover_Project_BackEnd/Chilli sample pic/
+Rover_Project_BackEnd/tomato sample pic/
+
+# Large Model Files
+# (Uncomment the line below if you want to upload your model to GitHub)
+# !Rover_Project_BackEnd/plant_model.h5 
+
+# Arduino / ESP32
+build/
+libraries/
+
+# OS specific files
+.DS_Store
+Thumbs.db
