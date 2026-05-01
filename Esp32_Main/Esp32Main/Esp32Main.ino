@@ -90,16 +90,22 @@ BLYNK_WRITE(V3) {
 }
 
 // Speed Control (V6)
-BLYNK_WRITE(V6) {
-  motorSpeed = param.asInt();
-}
+BLYNK_WRITE(V6) { motorSpeed = param.asInt(); }
 
 // Manual Mist Test (V7) - Hold to Spray, Release to Stop (Silent)
 BLYNK_WRITE(V7) {
   if (param.asInt()) {
-    digitalWrite(RELAY_MIST, LOW);   // Relay ON
+    digitalWrite(RELAY_MIST, LOW); // Relay ON
   } else {
-    digitalWrite(RELAY_MIST, HIGH);  // Relay OFF
+    digitalWrite(RELAY_MIST, HIGH); // Relay OFF
+  }
+}
+
+// Manual Capture (V8)
+BLYNK_WRITE(V8) {
+  if (param.asInt()) {
+    Serial.println("Manual Capture Triggered via App");
+    runAnalysisSequence();
   }
 }
 
@@ -134,10 +140,15 @@ void setup() {
   lcd.begin();
   lcd.backlight();
   lcd.clear();
-  lcd.print("Connecting...");
+  lcd.print("Rover VER 2.0");
+  lcd.setCursor(0, 1);
+  lcd.print("Connecting Blynk");
 
   // Connect to Blynk and WiFi
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, password);
+
+  // SYNC: Get the current state of switches/sliders from the app immediately
+  Blynk.syncAll();
 
   lcd.clear();
   lcd.print("Rover Ready!");
@@ -181,7 +192,14 @@ void loop() {
   Blynk.run();
   timer.run();
 
-  // Check for Serial commands for testing
+  // 1. MANUAL MODE CHECK (Highest Priority)
+  if (manualMode) {
+    // In manual mode, we do nothing in the loop.
+    // All movement is handled by the BLYNK_WRITE callbacks.
+    return;
+  }
+
+  // 2. Check for Serial commands for testing
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
@@ -190,60 +208,46 @@ void loop() {
     }
   }
 
-  if (!manualMode) {
-    autonomousLoop();
-  }
+  // 3. Run Autonomous if not in manual mode
+  autonomousLoop();
 }
+
+int ghostTriggerCounter = 0; // To prevent random beeps
 
 void autonomousLoop() {
   long distance = getDistance();
 
+  // Only trigger if we see the plant 3 times in a row (Filter)
   if (distance > 0 && distance < 15) {
-    isScanning = false;
-    stopMotors();
+    ghostTriggerCounter++;
+    if (ghostTriggerCounter >= 3) {
+      ghostTriggerCounter = 0;
 
-    lcd.clear();
-    lcd.print("Plant Detected");
-    lcd.setCursor(0, 1);
-    lcd.print("Analyzing...");
+      // ALERT: Stop and Beep for 1s
+      stopMotors();
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(1000);
+      digitalWrite(BUZZER_PIN, LOW);
 
-    Serial2.println("CAPTURE");
-
-    bool uploadSuccess = false;
-    unsigned long startUploadWait = millis();
-    while (millis() - startUploadWait < 15000) {
-      Blynk.run(); // Essential for preventing disconnection
-      if (Serial2.available()) {
-        String camResponse = Serial2.readStringUntil('\n');
-        camResponse.trim();
-        if (camResponse == "UPLOAD_SUCCESS") {
-          uploadSuccess = true;
-          break;
-        } else if (camResponse == "UPLOAD_FAILED") {
-          break;
-        }
-      }
-      delay(10);
-    }
-
-    if (uploadSuccess) {
-      checkResultFromServer();
-    } else {
       lcd.clear();
-      lcd.print("Cam/Upload Error");
-      blynkSafeDelay(2000);
+      lcd.print("Plant Found!");
+      lcd.setCursor(0, 1);
+      lcd.print("Press Capture Button to Scan");
+
+      // We do NOT call runAnalysisSequence() here anymore.
+      // We stay stopped and wait for the user to press V8.
+      isScanning = false;
+
+      // To prevent it from re-beeping immediately, we wait
+      // in a mini-loop until manualMode is changed or V8 is pressed
+      while (getDistance() < 15 && !manualMode) {
+        Blynk.run();
+        timer.run();
+        delay(100);
+      }
     }
-
-    // Resume movement
-    moveBackward();
-    blynkSafeDelay(600);
-    stopMotors();
-    blynkSafeDelay(200);
-    turnRight();
-    blynkSafeDelay(800);
-    stopMotors();
-
   } else {
+    ghostTriggerCounter = 0;
     moveForward();
     if (!isScanning) {
       lcd.clear();
@@ -251,6 +255,52 @@ void autonomousLoop() {
       isScanning = true;
     }
     blynkSafeDelay(50);
+  }
+}
+
+// New unified function for both Auto and Manual capture
+void runAnalysisSequence() {
+  isScanning = false;
+  stopMotors();
+
+  lcd.clear();
+  lcd.print("Analyzing...");
+
+  Serial2.println("CAPTURE");
+
+  bool uploadSuccess = false;
+  unsigned long startUploadWait = millis();
+  while (millis() - startUploadWait < 15000) {
+    Blynk.run();
+    if (Serial2.available()) {
+      String camResponse = Serial2.readStringUntil('\n');
+      camResponse.trim();
+      if (camResponse == "UPLOAD_SUCCESS") {
+        uploadSuccess = true;
+        break;
+      } else if (camResponse == "UPLOAD_FAILED") {
+        break;
+      }
+    }
+    delay(10);
+  }
+
+  if (uploadSuccess) {
+    checkResultFromServer();
+
+    // AFTER Analysis/Treatment is done, move past the plant automatically
+    moveBackward();
+    blynkSafeDelay(600);
+    stopMotors();
+    blynkSafeDelay(200);
+    turnRight();
+    blynkSafeDelay(1000); // Slightly more turn to clear the plant
+    stopMotors();
+
+  } else {
+    lcd.clear();
+    lcd.print("Cam/Upload Error");
+    blynkSafeDelay(2000);
   }
 }
 
@@ -398,7 +448,7 @@ void triggerMist(String reason) {
   digitalWrite(BUZZER_PIN, LOW);
 
   // 2. Spraying (10 seconds)
-  digitalWrite(RELAY_MIST, LOW);  // Relay ON
+  digitalWrite(RELAY_MIST, LOW); // Relay ON
   blynkSafeDelay(10000);
   digitalWrite(RELAY_MIST, HIGH); // Relay OFF
 
